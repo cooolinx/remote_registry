@@ -224,6 +224,80 @@ void main() {
     await r.dispose();
   });
 
+  test('refresh short-circuits when latest.version equals local cache',
+      () async {
+    // Seed 0.1.0.
+    {
+      final seed = RemoteRegistry.withStorage(
+        baseUrl: 'https://cdn.example/',
+        storageDir: root,
+        testHttpClient: cdn(version: '0.1.0', files: {'a.json': '{"v":1}'}),
+      );
+      await seed.init(mode: RegistryInitMode.blockUntilLatest);
+      await seed.dispose();
+    }
+
+    // Now count requests. Server still says 0.1.0 — refresh must NOT
+    // fetch manifest.json or any file.
+    final requestedPaths = <String>[];
+    final countingClient = MockClient((req) async {
+      requestedPaths.add(req.url.path);
+      if (req.url.path.endsWith('/latest.json')) {
+        return http.Response(jsonEncode({'version': '0.1.0'}), 200);
+      }
+      // Anything else would be a bug — fail loudly so the test catches it.
+      return http.Response('should not be requested', 500);
+    });
+
+    final r = RemoteRegistry.withStorage(
+      baseUrl: 'https://cdn.example/',
+      storageDir: root,
+      testHttpClient: countingClient,
+    );
+    await r.init(mode: RegistryInitMode.blockUntilLatest);
+
+    expect(r.currentVersion, '0.1.0');
+    expect(requestedPaths, hasLength(1));
+    expect(requestedPaths.single, endsWith('/latest.json'));
+    await r.dispose();
+  });
+
+  test('refresh short-circuits when latest.version is older than local cache',
+      () async {
+    // Seed 0.2.0 (future-dated).
+    {
+      final seed = RemoteRegistry.withStorage(
+        baseUrl: 'https://cdn.example/',
+        storageDir: root,
+        testHttpClient: cdn(version: '0.2.0', files: {'a.json': '{"v":2}'}),
+      );
+      await seed.init(mode: RegistryInitMode.blockUntilLatest);
+      await seed.dispose();
+    }
+
+    // CDN rolled back to 0.1.0 — we should stay on 0.2.0 and not download.
+    final requestedPaths = <String>[];
+    final countingClient = MockClient((req) async {
+      requestedPaths.add(req.url.path);
+      if (req.url.path.endsWith('/latest.json')) {
+        return http.Response(jsonEncode({'version': '0.1.0'}), 200);
+      }
+      return http.Response('should not be requested', 500);
+    });
+
+    final r = RemoteRegistry.withStorage(
+      baseUrl: 'https://cdn.example/',
+      storageDir: root,
+      testHttpClient: countingClient,
+    );
+    await r.init(mode: RegistryInitMode.blockUntilLatest);
+
+    expect(r.currentVersion, '0.2.0');
+    expect(requestedPaths, hasLength(1));
+    expect(requestedPaths.single, endsWith('/latest.json'));
+    await r.dispose();
+  });
+
   test('manifest version mismatch with latest.json throws', () async {
     final client = MockClient((req) async {
       final path = req.url.path;
