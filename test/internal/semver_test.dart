@@ -18,4 +18,9 @@ void main() {
     expect(() => compareSemver('1.2', '1.2.3'), throwsFormatException);
     expect(() => compareSemver('abc', '1.2.3'), throwsFormatException);
   });
+  test('compareSemver: rejects leading zeros', () {
+    expect(() => compareSemver('01.2.3', '1.2.3'), throwsFormatException);
+    expect(() => compareSemver('1.02.3', '1.2.3'), throwsFormatException);
+    expect(compareSemver('0.0.0', '0.0.0'), 0);
+  });
 }

@@ -14,6 +14,9 @@ List<int> _parse(String s) {
   final parts = s.split('.');
   if (parts.length != 3) throw FormatException('Bad semver: $s');
   return parts.map((p) {
+    if (p.length > 1 && p.startsWith('0')) {
+      throw FormatException('Bad semver (leading zero): $s');
+    }
     final n = int.tryParse(p);
     if (n == null || n < 0) throw FormatException('Bad semver: $s');
     return n;
