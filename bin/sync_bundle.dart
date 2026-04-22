@@ -11,7 +11,7 @@ import 'package:remote_registry/src/transport/http_transport.dart';
 /// bundling.
 ///
 /// Usage:
-///   dart run remote_registry:sync_bundle --base <url> --out <dir> [--version X.Y.Z]
+///   dart run remote_registry:sync_bundle --base URL --out DIR [--version X.Y.Z]
 Future<void> main(List<String> args) async {
   final opts = _parseArgs(args);
   final base = Uri.parse(

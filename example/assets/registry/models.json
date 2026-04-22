@@ -1,0 +1,6 @@
+{
+  "providers": {
+    "openai": ["gpt-4", "gpt-4o"],
+    "anthropic": ["claude-opus", "claude-sonnet"]
+  }
+}
