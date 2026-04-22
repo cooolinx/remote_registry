@@ -139,4 +139,29 @@ void main() {
     final tmp = File(p.join(root.path, 'state.json.tmp'));
     expect(await tmp.exists(), isFalse);
   });
+
+  test('listInstalledVersions skips non-semver v* dirs', () async {
+    final s = RegistryStorage(root);
+    for (final name in ['v0.1.0', 'vfoo', 'v1.0', 'v2.3.4', 'vbar-beta']) {
+      await Directory(p.join(root.path, 'versions', name))
+          .create(recursive: true);
+    }
+    expect(await s.listInstalledVersions(), ['0.1.0', '2.3.4']);
+  });
+
+  test('readCurrentVersion returns null on malformed (not-object) state.json',
+      () async {
+    final s = RegistryStorage(root);
+    await root.create(recursive: true);
+    await File(p.join(root.path, 'state.json')).writeAsString('[1,2]');
+    expect(await s.readCurrentVersion(), isNull);
+  });
+
+  test('readManifest returns null on not-object JSON', () async {
+    final s = RegistryStorage(root);
+    final dir = Directory(p.join(root.path, 'versions', 'v0.1.0'));
+    await dir.create(recursive: true);
+    await File(p.join(dir.path, 'manifest.json')).writeAsString('"hello"');
+    expect(await s.readManifest('0.1.0'), isNull);
+  });
 }

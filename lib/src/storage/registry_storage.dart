@@ -44,7 +44,8 @@ class RegistryStorage {
     final f = _stateFileRef();
     if (!await f.exists()) return null;
     try {
-      final raw = jsonDecode(await f.readAsString()) as Map<String, dynamic>;
+      final raw = jsonDecode(await f.readAsString());
+      if (raw is! Map<String, dynamic>) return null;
       final v = raw['currentVersion'];
       return v is String ? v : null;
     } on FormatException {
@@ -81,8 +82,9 @@ class RegistryStorage {
     final f = File(p.join(_versionDir(version).path, 'manifest.json'));
     if (!await f.exists()) return null;
     try {
-      final json = jsonDecode(await f.readAsString()) as Map<String, dynamic>;
-      return Manifest.fromJson(json);
+      final parsed = jsonDecode(await f.readAsString());
+      if (parsed is! Map<String, dynamic>) return null;
+      return Manifest.fromJson(parsed);
     } on FormatException {
       return null;
     }
@@ -114,7 +116,8 @@ class RegistryStorage {
 
   /// Lists installed versions in ascending semver order.
   ///
-  /// Ignores any entry that does not start with `v`.
+  /// Ignores any entry that does not start with `v` or whose remainder is not
+  /// valid semver.
   Future<List<String>> listInstalledVersions() async {
     final d = Directory(p.join(root.path, _versionsDir));
     if (!await d.exists()) return const [];
@@ -123,7 +126,14 @@ class RegistryStorage {
     for (final e in entries) {
       if (e is! Directory) continue;
       final name = p.basename(e.path);
-      if (name.startsWith('v')) versions.add(name.substring(1));
+      if (!name.startsWith('v')) continue;
+      final ver = name.substring(1);
+      try {
+        compareSemver(ver, ver); // validates format
+      } on FormatException {
+        continue;
+      }
+      versions.add(ver);
     }
     versions.sort(compareSemver);
     return versions;
