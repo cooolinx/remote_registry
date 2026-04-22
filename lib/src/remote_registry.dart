@@ -49,6 +49,11 @@ class RemoteRegistry {
     String? bundledAssetPath,
     Duration httpTimeout = const Duration(seconds: 30),
     int maxConcurrentDownloads = 4,
+
+    /// Number of prior versions to retain on disk after a successful
+    /// upgrade. Default 2. Values < 2 are supported but can cause a
+    /// [RegistryFileNotFoundException] if [getFile] is called concurrently
+    /// with a background refresh that promotes a new version and GCs the old.
     int keepVersions = 2,
     @visibleForTesting AssetBundle? testBundle,
     @visibleForTesting http.Client? testHttpClient,
@@ -69,6 +74,11 @@ class RemoteRegistry {
     String? bundledAssetPath,
     Duration httpTimeout = const Duration(seconds: 30),
     int maxConcurrentDownloads = 4,
+
+    /// Number of prior versions to retain on disk after a successful
+    /// upgrade. Default 2. Values < 2 are supported but can cause a
+    /// [RegistryFileNotFoundException] if [getFile] is called concurrently
+    /// with a background refresh that promotes a new version and GCs the old.
     int keepVersions = 2,
     @visibleForTesting AssetBundle? testBundle,
     @visibleForTesting http.Client? testHttpClient,
@@ -104,6 +114,7 @@ class RemoteRegistry {
   Manifest? _activeManifest;
   String? _activeVersion;
   bool _initialized = false;
+  Completer<void>? _initCompleter;
 
   /// The version currently in use.
   ///
@@ -126,14 +137,31 @@ class RemoteRegistry {
   ///    (if [bundledAssetPath] was set at construction).
   /// 3. **Network**: fetches and verifies the latest version from the CDN.
   ///
-  /// Subsequent calls are no-ops (idempotent).
+  /// Subsequent calls are no-ops (idempotent). Concurrent calls are
+  /// serialized — the second caller awaits the same underlying future so
+  /// `late final` fields are assigned exactly once.
   ///
   /// See [RegistryInitMode] for trade-offs between modes.
   Future<void> init({
     RegistryInitMode mode = RegistryInitMode.staleThenRefresh,
   }) async {
     if (_initialized) return;
+    if (_initCompleter != null) return _initCompleter!.future;
+    final completer = _initCompleter = Completer<void>();
+    try {
+      await _doInit(mode);
+      completer.complete();
+    } catch (e, st) {
+      _initCompleter = null; // allow retry after failure
+      completer.completeError(e, st);
+      // Re-throw via the completer future so the originating caller also
+      // receives the error through the same propagation path as concurrent
+      // callers, avoiding a second unhandled-error zone event.
+      return completer.future;
+    }
+  }
 
+  Future<void> _doInit(RegistryInitMode mode) async {
     final dir = _customStorageDir ?? await _defaultStorageDir();
     _storage = RegistryStorage(dir);
     _http = HttpTransport(client: _testHttpClient, timeout: _httpTimeout);
@@ -201,10 +229,15 @@ class RemoteRegistry {
       }
 
       // 2. Skip if not newer.
-      if (_activeVersion != null &&
-          compareSemver(latest.version, _activeVersion!) <= 0) {
-        return false;
+      bool notNewer;
+      try {
+        notNewer = _activeVersion != null &&
+            compareSemver(latest.version, _activeVersion!) <= 0;
+      } on FormatException catch (e) {
+        throw RegistryNetworkException(
+            'Invalid semver in latest.json: "${latest.version}"', e);
       }
+      if (notNewer) return false;
 
       // 3. Fetch manifest.
       Manifest manifest;

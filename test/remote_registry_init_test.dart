@@ -19,6 +19,28 @@ class _FakeBundle extends CachingAssetBundle {
   }
 }
 
+Future<void> _seedCache(
+    Directory root, String version, Map<String, String> files) async {
+  final s = RegistryStorage(root);
+  final mFiles = files.entries
+      .map((e) => ManifestFile(
+            path: e.key,
+            sha256: sha256Hex(utf8.encode(e.value)),
+            size: utf8.encode(e.value).length,
+          ))
+      .toList();
+  final m = Manifest(version: version, files: mFiles);
+  await s.writeManifest(version, m);
+  for (final e in files.entries) {
+    await s.writeVersionFile(
+      version: version,
+      file: m.findByPath(e.key)!,
+      bytes: utf8.encode(e.value),
+    );
+  }
+  await s.writeCurrentVersion(version);
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late Directory root;
@@ -29,29 +51,8 @@ void main() {
     if (await root.exists()) await root.delete(recursive: true);
   });
 
-  Future<void> seedCache(String version, Map<String, String> files) async {
-    final s = RegistryStorage(root);
-    final mFiles = files.entries
-        .map((e) => ManifestFile(
-              path: e.key,
-              sha256: sha256Hex(utf8.encode(e.value)),
-              size: utf8.encode(e.value).length,
-            ))
-        .toList();
-    final m = Manifest(version: version, files: mFiles);
-    await s.writeManifest(version, m);
-    for (final e in files.entries) {
-      await s.writeVersionFile(
-        version: version,
-        file: m.findByPath(e.key)!,
-        bytes: utf8.encode(e.value),
-      );
-    }
-    await s.writeCurrentVersion(version);
-  }
-
   test('init uses local cache when present', () async {
-    await seedCache('0.1.0', {'a.json': '{"x":1}'});
+    await _seedCache(root, '0.1.0', {'a.json': '{"x":1}'});
     final r = RemoteRegistry.withStorage(
       baseUrl: 'https://unused.example/',
       storageDir: root,
@@ -114,7 +115,7 @@ void main() {
   });
 
   test('getFile throws FileNotFound for path not in manifest', () async {
-    await seedCache('0.1.0', {'a.json': '{}'});
+    await _seedCache(root, '0.1.0', {'a.json': '{}'});
     final r = RemoteRegistry.withStorage(
       baseUrl: 'https://unused.example/',
       storageDir: root,
@@ -133,5 +134,19 @@ void main() {
       storageDir: Directory.systemTemp,
     );
     expect(() => r.currentVersion, throwsStateError);
+  });
+
+  test('concurrent init() calls share a single initialization', () async {
+    await _seedCache(root, '0.1.0', {'a.json': '{"x":1}'});
+    final r = RemoteRegistry.withStorage(
+      baseUrl: 'https://unused.example/',
+      storageDir: root,
+    );
+    // Fire two concurrent init() calls without awaiting the first.
+    final f1 = r.init();
+    final f2 = r.init();
+    await Future.wait([f1, f2]);
+    expect(r.currentVersion, '0.1.0');
+    await r.dispose();
   });
 }

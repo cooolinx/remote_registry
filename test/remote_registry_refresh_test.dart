@@ -172,6 +172,35 @@ void main() {
     await r.dispose();
   });
 
+  test('non-semver latest.version throws RegistryNetworkException', () async {
+    // Seed 0.1.0 so _activeVersion is set and compareSemver is actually called.
+    {
+      final seed = RemoteRegistry.withStorage(
+        baseUrl: 'https://cdn.example/',
+        storageDir: root,
+        testHttpClient: cdn(version: '0.1.0', files: {'a.json': '{"v":1}'}),
+      );
+      await seed.init(mode: RegistryInitMode.blockUntilLatest);
+      await seed.dispose();
+    }
+    final client = MockClient((req) async {
+      if (req.url.path.endsWith('/latest.json')) {
+        return http.Response(jsonEncode({'version': 'not-a-semver'}), 200);
+      }
+      return http.Response('not found', 404);
+    });
+    final r = RemoteRegistry.withStorage(
+      baseUrl: 'https://cdn.example/',
+      storageDir: root,
+      testHttpClient: client,
+    );
+    await expectLater(
+      r.init(mode: RegistryInitMode.blockUntilLatest),
+      throwsA(isA<RegistryNetworkException>()),
+    );
+    await r.dispose();
+  });
+
   test('manifest version mismatch with latest.json throws', () async {
     final client = MockClient((req) async {
       final path = req.url.path;
