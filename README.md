@@ -15,12 +15,95 @@ Designed for apps that ship configuration (models, prompts, feature flags, image
 
 Supported platforms: Android, iOS, macOS, Windows, Linux.
 
-## Install
+## Integration
+
+End-to-end setup for a Flutter app, in order:
+
+### 1. Add the dependency
 
 ```yaml
+# pubspec.yaml
 dependencies:
-  remote_registry: ^0.1.0
+  remote_registry: ^0.1.1
 ```
+
+### 2. Declare the bundled-asset directory
+
+```yaml
+# pubspec.yaml
+flutter:
+  assets:
+    - assets/registry/
+```
+
+### 3. Seed the bundled snapshot
+
+Run once and commit the result:
+
+```bash
+dart run remote_registry:sync_bundle \
+    --base https://yourcdn.example/registry \
+    --out  assets/registry/
+```
+
+This pulls the current CDN snapshot (manifest + files, SHA-256 verified)
+into `assets/registry/` so first-run users without network still work.
+
+### 4. Initialize before `runApp`
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:remote_registry/remote_registry.dart';
+
+late final RemoteRegistry registry;
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  registry = RemoteRegistry(
+    baseUrl: 'https://yourcdn.example/registry',
+    bundledAssetPath: 'assets/registry/',
+  );
+  await registry.init();
+  runApp(const MyApp());
+}
+```
+
+The default `init()` is stale-then-refresh: local cache (or bundle) wins
+immediately, new versions download in the background and become active on
+the next `init()`. See [Initialization modes](#initialization-modes) for
+alternatives.
+
+### 5. Read files anywhere in your app
+
+```dart
+final models = await registry.getJson('models.json');
+final File logo = await registry.getFile('images/logo.png');
+```
+
+### 6. Keep the bundle fresh in CI
+
+Add a sync step before every release build so the shipped snapshot doesn't
+drift:
+
+```yaml
+# .github/workflows/release.yml
+- name: Sync bundled registry snapshot
+  run: |
+    dart run remote_registry:sync_bundle \
+      --base https://yourcdn.example/registry \
+      --out  assets/registry/
+- name: Commit if changed
+  run: |
+    if ! git diff --quiet assets/registry; then
+      git config user.email "ci@example.com"
+      git config user.name "ci"
+      git add assets/registry
+      git commit -m "chore: sync bundled registry snapshot"
+      git push
+    fi
+```
+
+Or schedule it as a weekly cron workflow, independent of releases.
 
 ## Registry convention
 
@@ -57,21 +140,7 @@ snapshot. The same tolerance applies to `manifest.json`'s
 - `sha256` is 64 lowercase hex chars.
 - `size` is optional but enforced when present.
 
-## Usage
-
-```dart
-import 'package:remote_registry/remote_registry.dart';
-
-final registry = RemoteRegistry(
-  baseUrl: 'https://yourcdn.example/registry',
-  bundledAssetPath: 'assets/registry/',  // optional fallback
-);
-
-await registry.init();
-
-final models = await registry.getJson('models.json');
-final File logoFile = await registry.getFile('assets/logo.png');
-```
+## Advanced usage
 
 ### Custom storage directory
 
@@ -94,26 +163,6 @@ registry.onUpdate.listen((version) {
   print('Registry updated to $version');
 });
 ```
-
-## Bundling an asset snapshot
-
-For first-run-offline support, ship a snapshot in your Flutter assets. Use the CLI:
-
-```bash
-dart run remote_registry:sync_bundle \
-    --base https://yourcdn.example/registry \
-    --out  example/assets/registry
-```
-
-Then declare the directory in `pubspec.yaml`:
-
-```yaml
-flutter:
-  assets:
-    - assets/registry/
-```
-
-Run this in CI before every release to keep the bundled snapshot fresh.
 
 ## Error handling
 
