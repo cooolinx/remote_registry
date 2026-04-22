@@ -24,15 +24,16 @@ void verifyBytes({
   if (expectedSize != null && bytes.length != expectedSize) {
     throw RegistryIntegrityException(
       path: path,
-      expectedSha256: expectedSha256,
-      actualSha256: 'size=${bytes.length}!=$expectedSize',
+      expectedSize: expectedSize,
+      actualSize: bytes.length,
     );
   }
   final actual = sha256Hex(bytes);
-  if (actual.toLowerCase() != expectedSha256.toLowerCase()) {
+  final expected = expectedSha256.toLowerCase();
+  if (actual != expected) {
     throw RegistryIntegrityException(
       path: path,
-      expectedSha256: expectedSha256.toLowerCase(),
+      expectedSha256: expected,
       actualSha256: actual,
     );
   }

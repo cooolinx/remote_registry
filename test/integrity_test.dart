@@ -24,18 +24,22 @@ void main() {
       () => verifyBytes(path: 'x', bytes: helloBytes, expectedSha256: 'deadbeef'),
       throwsA(isA<RegistryIntegrityException>()
           .having((e) => e.path, 'path', 'x')
-          .having((e) => e.actualSha256, 'actual', helloSha)),
+          .having((e) => e.actualSha256, 'actual', helloSha)
+          .having((e) => e.expectedSize, 'expectedSize is null', isNull)),
     );
   });
 
-  test('verifyBytes throws when size mismatches', () {
+  test('verifyBytes throws with size fields on size mismatch', () {
     expect(
       () => verifyBytes(
           path: 'x',
           bytes: helloBytes,
           expectedSha256: helloSha,
           expectedSize: 999),
-      throwsA(isA<RegistryIntegrityException>()),
+      throwsA(isA<RegistryIntegrityException>()
+          .having((e) => e.expectedSize, 'expectedSize', 999)
+          .having((e) => e.actualSize, 'actualSize', helloBytes.length)
+          .having((e) => e.actualSha256, 'actualSha256 is null', isNull)),
     );
   });
 }

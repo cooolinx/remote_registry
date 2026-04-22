@@ -26,28 +26,55 @@ class RegistryNetworkException extends RegistryException {
   }
 }
 
-/// Thrown when downloaded bytes fail SHA-256 verification.
+/// Thrown when downloaded bytes fail SHA-256 verification or size check.
 class RegistryIntegrityException extends RegistryException {
-  /// Creates a [RegistryIntegrityException] for [path] when the downloaded
-  /// content has [actualSha256] instead of the [expectedSha256] listed in the
-  /// manifest.
+  /// Creates an integrity failure for [path]. At least one of the
+  /// sha/size pairs should be populated so the message is informative.
   RegistryIntegrityException({
     required this.path,
-    required this.expectedSha256,
-    required this.actualSha256,
-  }) : super(
-          'Integrity check failed for $path '
-          '(expected $expectedSha256, got $actualSha256)',
-        );
+    this.expectedSha256,
+    this.actualSha256,
+    this.expectedSize,
+    this.actualSize,
+  }) : super(_buildMessage(
+          path,
+          expectedSha256,
+          actualSha256,
+          expectedSize,
+          actualSize,
+        ));
 
-  /// The registry-relative path of the file that failed verification.
+  /// Relative path of the file whose bytes failed verification.
   final String path;
 
-  /// The SHA-256 digest declared in the manifest.
-  final String expectedSha256;
+  /// The hash the manifest said the bytes should have.
+  final String? expectedSha256;
 
-  /// The SHA-256 digest computed from the downloaded bytes.
-  final String actualSha256;
+  /// The hash computed from the actual bytes, when available.
+  final String? actualSha256;
+
+  /// The size the manifest said the bytes should have, when checked.
+  final int? expectedSize;
+
+  /// The size of the actual bytes, when a size check failed.
+  final int? actualSize;
+
+  static String _buildMessage(
+    String path,
+    String? expectedSha,
+    String? actualSha,
+    int? expectedSize,
+    int? actualSize,
+  ) {
+    final parts = <String>[];
+    if (expectedSize != null && actualSize != null) {
+      parts.add('expected size $expectedSize, got $actualSize');
+    }
+    if (expectedSha != null && actualSha != null) {
+      parts.add('expected sha256 $expectedSha, got $actualSha');
+    }
+    return 'Integrity check failed for $path (${parts.join("; ")})';
+  }
 }
 
 /// Thrown when a requested file is not in the current manifest.

@@ -15,6 +15,8 @@ void main() {
     expect(e.toString(), contains('aaa'));
     expect(e.toString(), contains('bbb'));
     expect(e, isA<RegistryException>());
+    expect(e.expectedSize, isNull);
+    expect(e.actualSize, isNull);
   });
 
   test('RegistryFileNotFoundException carries path', () {
