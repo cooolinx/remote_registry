@@ -21,4 +21,23 @@ void main() {
       throwsFormatException,
     );
   });
+
+  test('accepts and strips leading v prefix', () {
+    final p = LatestPointer.fromJson(
+        jsonDecode('{"version":"v1.2.3"}') as Map<String, dynamic>);
+    expect(p.version, '1.2.3');
+  });
+
+  test('accepts and strips leading V prefix', () {
+    final p = LatestPointer.fromJson(
+        jsonDecode('{"version":"V1.2.3"}') as Map<String, dynamic>);
+    expect(p.version, '1.2.3');
+  });
+
+  test('rejects version that is only a v prefix', () {
+    expect(
+      () => LatestPointer.fromJson(<String, dynamic>{'version': 'v'}),
+      throwsFormatException,
+    );
+  });
 }

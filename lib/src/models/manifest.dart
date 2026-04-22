@@ -1,5 +1,7 @@
 import 'package:meta/meta.dart';
 
+import '../internal/semver.dart';
+
 /// Parsing failures throw [FormatException]; callers at the SDK boundary
 /// (HTTP transport, disk storage) are expected to wrap these into
 /// [RegistryException] subtypes.
@@ -100,10 +102,15 @@ class Manifest {
   /// Throws [FormatException] if `version` or `files` are invalid,
   /// or if any file entry fails [ManifestFile.fromJson] validation.
   factory Manifest.fromJson(Map<String, dynamic> json) {
-    final v = json['version'];
-    if (v is! String || v.isEmpty) {
+    final rawV = json['version'];
+    if (rawV is! String || rawV.isEmpty) {
       throw const FormatException(
           'manifest: "version" must be non-empty string');
+    }
+    final v = stripVPrefix(rawV);
+    if (v.isEmpty) {
+      throw const FormatException(
+          'manifest: "version" must not be only a "v" prefix');
     }
     final rawFiles = json['files'];
     if (rawFiles is! List) {
