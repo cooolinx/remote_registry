@@ -18,6 +18,12 @@ class RegistryNetworkException extends RegistryException {
 
   /// The underlying exception or error that triggered this failure, if any.
   final Object? cause;
+
+  @override
+  String toString() {
+    final base = super.toString();
+    return cause == null ? base : '$base (cause: $cause)';
+  }
 }
 
 /// Thrown when downloaded bytes fail SHA-256 verification.
@@ -47,7 +53,7 @@ class RegistryIntegrityException extends RegistryException {
 /// Thrown when a requested file is not in the current manifest.
 class RegistryFileNotFoundException extends RegistryException {
   /// Creates a [RegistryFileNotFoundException] for [path].
-  RegistryFileNotFoundException(this.path) : super('File not found: $path');
+  const RegistryFileNotFoundException(this.path) : super('File not found: $path');
 
   /// The registry-relative path that was not found.
   final String path;
