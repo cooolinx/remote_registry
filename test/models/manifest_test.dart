@@ -88,4 +88,19 @@ void main() {
         as Map<String, dynamic>;
     expect(() => Manifest.fromJson(bad), throwsFormatException);
   });
+
+  test('accepts and strips v prefix on version', () {
+    final json = jsonDecode(
+            '{"version":"v0.1.0","files":[{"path":"a","sha256":"$_sha1"}]}')
+        as Map<String, dynamic>;
+    final m = Manifest.fromJson(json);
+    expect(m.version, '0.1.0');
+  });
+
+  test('rejects version that is only a v prefix', () {
+    final bad = jsonDecode(
+            '{"version":"v","files":[{"path":"a","sha256":"$_sha1"}]}')
+        as Map<String, dynamic>;
+    expect(() => Manifest.fromJson(bad), throwsFormatException);
+  });
 }

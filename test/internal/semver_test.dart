@@ -23,4 +23,11 @@ void main() {
     expect(() => compareSemver('1.02.3', '1.2.3'), throwsFormatException);
     expect(compareSemver('0.0.0', '0.0.0'), 0);
   });
+  test('stripVPrefix: removes leading v or V', () {
+    expect(stripVPrefix('v0.1.0'), '0.1.0');
+    expect(stripVPrefix('V0.1.0'), '0.1.0');
+    expect(stripVPrefix('0.1.0'), '0.1.0');
+    expect(stripVPrefix(''), '');
+    expect(stripVPrefix('v'), '');
+  });
 }

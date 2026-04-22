@@ -1,6 +1,6 @@
 name: remote_registry
 description: Pull JSON and binary config files from a CDN-backed registry with SHA-256 integrity, local caching, and bundled-asset fallback.
-version: 0.1.0
+version: 0.1.1
 homepage: https://github.com/cooolinx/remote_registry
 repository: https://github.com/cooolinx/remote_registry
 

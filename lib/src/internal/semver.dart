@@ -1,3 +1,9 @@
+/// Strips a leading `v` or `V` from [s] if present. Used to accept
+/// both `"0.1.0"` and `"v0.1.0"` at the SDK's parsing boundaries so
+/// a registry that emits either form interoperates cleanly.
+String stripVPrefix(String s) =>
+    (s.startsWith('v') || s.startsWith('V')) ? s.substring(1) : s;
+
 /// Compares two `MAJOR.MINOR.PATCH` strings. Returns negative if [a] < [b],
 /// 0 if equal, positive if [a] > [b]. Throws [FormatException] on bad input.
 int compareSemver(String a, String b) {

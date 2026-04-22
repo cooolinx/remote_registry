@@ -37,6 +37,12 @@ Your CDN must serve:
 { "version": "0.1.0" }
 ```
 
+The `version` field is accepted with or without a leading `v` /
+`V` prefix — both `"0.1.0"` and `"v0.1.0"` resolve to the same
+snapshot. The same tolerance applies to `manifest.json`'s
+`version` and the CLI's `--version` flag. The `v` in the URL path
+(`versions/v0.1.0/...`) is always literal.
+
 **`manifest.json`:**
 ```json
 {

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 import 'package:remote_registry/src/integrity.dart';
+import 'package:remote_registry/src/internal/semver.dart';
 import 'package:remote_registry/src/models/latest.dart';
 import 'package:remote_registry/src/models/manifest.dart';
 import 'package:remote_registry/src/transport/http_transport.dart';
@@ -23,8 +24,10 @@ Future<void> main(List<String> args) async {
 
   final http = HttpTransport();
   try {
-    final version = opts['version'] ??
-        LatestPointer.fromJson(await http.fetchJson(base.resolve('latest.json')))
+    final version = opts['version'] != null
+        ? stripVPrefix(opts['version']!)
+        : LatestPointer.fromJson(
+                await http.fetchJson(base.resolve('latest.json')))
             .version;
 
     final manifest = Manifest.fromJson(
