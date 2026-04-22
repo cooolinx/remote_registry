@@ -34,6 +34,12 @@ enum RegistryInitMode {
 /// cache, a Flutter-asset fallback snapshot, or the network. Every
 /// downloaded file is SHA-256 verified against the manifest.
 ///
+/// The [keepVersions] parameter controls how many prior versions are
+/// retained on disk after a successful refresh (default 2). Values less
+/// than 2 are supported but may cause a [RegistryFileNotFoundException]
+/// if [getFile] is called concurrently with a background refresh that
+/// GCs the version being read.
+///
 /// Typical usage:
 /// ```dart
 /// final registry = RemoteRegistry(baseUrl: 'https://cdn.example.com/registry/');
@@ -228,18 +234,22 @@ class RemoteRegistry {
         throw RegistryNetworkException('Invalid latest.json: ${e.message}', e);
       }
 
-      // 2. Skip if not newer.
-      bool notNewer;
+      // 2. Validate semver format unconditionally before using the version in
+      //    any path operation (guards against path-traversal via crafted CDN).
       try {
-        notNewer = _activeVersion != null &&
-            compareSemver(latest.version, _activeVersion!) <= 0;
+        compareSemver(latest.version, latest.version);
       } on FormatException catch (e) {
         throw RegistryNetworkException(
             'Invalid semver in latest.json: "${latest.version}"', e);
       }
-      if (notNewer) return false;
 
-      // 3. Fetch manifest.
+      // 3. Skip if not newer (compareSemver is safe here — version is valid).
+      if (_activeVersion != null &&
+          compareSemver(latest.version, _activeVersion!) <= 0) {
+        return false;
+      }
+
+      // 4. Fetch manifest.
       Manifest manifest;
       try {
         manifest = Manifest.fromJson(
@@ -251,17 +261,17 @@ class RemoteRegistry {
         throw RegistryNetworkException('Invalid manifest.json: ${e.message}', e);
       }
 
-      // 4. Validate manifest/latest version consistency.
+      // 5. Validate manifest/latest version consistency.
       if (manifest.version != latest.version) {
         throw RegistryNetworkException(
           'manifest.version (${manifest.version}) != latest.version (${latest.version})',
         );
       }
 
-      // 5. Write manifest to storage.
+      // 6. Write manifest to storage.
       await _storage.writeManifest(manifest.version, manifest);
 
-      // 6. Download files in parallel.
+      // 7. Download files in parallel.
       await runBounded<void>(
         maxConcurrent: _maxConcurrent,
         tasks: [
@@ -281,20 +291,20 @@ class RemoteRegistry {
         ],
       );
 
-      // 7. Persist the new current version.
+      // 8. Persist the new current version.
       await _storage.writeCurrentVersion(manifest.version);
 
-      // 8. Update in-memory state.
+      // 9. Update in-memory state.
       _activeVersion = manifest.version;
       _activeManifest = manifest;
 
-      // 9. GC old versions.
+      // 10. GC old versions.
       await _storage.gcOldVersions(
         keep: _keepVersions,
         current: manifest.version,
       );
 
-      // 10. Emit update event.
+      // 11. Emit update event.
       if (!_updateController.isClosed) {
         _updateController.add(manifest.version);
       }
@@ -330,9 +340,18 @@ class RemoteRegistry {
   ///
   /// Throws [StateError] if [init] has not completed.
   /// Throws [RegistryFileNotFoundException] if [relPath] is not found.
+  /// Throws [RegistryNetworkException] if the file contents are not valid JSON.
   Future<dynamic> getJson(String relPath) async {
     final f = await getFile(relPath);
-    return jsonDecode(await f.readAsString());
+    final raw = await f.readAsString();
+    try {
+      return jsonDecode(raw);
+    } on FormatException catch (e) {
+      throw RegistryNetworkException(
+        'File at $relPath is not valid JSON: ${e.message}',
+        e,
+      );
+    }
   }
 
   /// Releases resources held by this instance.
@@ -341,10 +360,8 @@ class RemoteRegistry {
   /// must not be used.
   Future<void> dispose() async {
     if (!_updateController.isClosed) await _updateController.close();
-    // _http may not be initialized if init() was never called.
-    try {
-      _http.close();
-    } catch (_) {}
+    // _http is a late field; only close it if init() completed successfully.
+    if (_initialized) _http.close();
   }
 
   // ---------------- internals ----------------

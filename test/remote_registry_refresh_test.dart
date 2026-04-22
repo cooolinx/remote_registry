@@ -201,6 +201,29 @@ void main() {
     await r.dispose();
   });
 
+  test('cold start with non-semver latest.version throws RegistryException',
+      () async {
+    // No cache — _activeVersion is null — so the old conditional
+    // compareSemver would have been skipped. The new unconditional
+    // validation must catch this.
+    final client = MockClient((req) async {
+      if (req.url.path.endsWith('/latest.json')) {
+        return http.Response(jsonEncode({'version': '../../evil'}), 200);
+      }
+      return http.Response('not found', 404);
+    });
+    final r = RemoteRegistry.withStorage(
+      baseUrl: 'https://cdn.example/',
+      storageDir: root,
+      testHttpClient: client,
+    );
+    await expectLater(
+      r.init(mode: RegistryInitMode.blockUntilLatest),
+      throwsA(isA<RegistryException>()),
+    );
+    await r.dispose();
+  });
+
   test('manifest version mismatch with latest.json throws', () async {
     final client = MockClient((req) async {
       final path = req.url.path;

@@ -149,4 +149,20 @@ void main() {
     expect(r.currentVersion, '0.1.0');
     await r.dispose();
   });
+
+  test('getJson wraps FormatException as RegistryNetworkException', () async {
+    // Seed a non-JSON file. _seedCache uses the raw string as file content,
+    // so seeding with a non-JSON value produces a file that will fail decode.
+    await _seedCache(root, '0.1.0', {'image.bin': 'not-json-bytes'});
+    final r = RemoteRegistry.withStorage(
+      baseUrl: 'https://unused.example/',
+      storageDir: root,
+    );
+    await r.init();
+    await expectLater(
+      r.getJson('image.bin'),
+      throwsA(isA<RegistryNetworkException>()),
+    );
+    await r.dispose();
+  });
 }
