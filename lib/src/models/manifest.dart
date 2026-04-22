@@ -1,12 +1,20 @@
 import 'package:meta/meta.dart';
 
+/// Parsing failures throw [FormatException]; callers at the SDK boundary
+/// (HTTP transport, disk storage) are expected to wrap these into
+/// [RegistryException] subtypes.
+
+// Module-private pattern: exactly 64 lowercase hex characters.
+final _sha256Pattern = RegExp(r'^[0-9a-f]{64}$');
+
 /// Describes a single file entry within a [Manifest].
 @immutable
 class ManifestFile {
   /// Creates a [ManifestFile].
   ///
-  /// [path] must be a relative, traversal-safe POSIX path.
-  /// [sha256] must be a non-empty hex digest.
+  /// [path] must be a relative, traversal-safe POSIX path with no backslashes
+  /// or empty segments.
+  /// [sha256] must be exactly 64 lowercase hex characters.
   /// [size] is optional and represents the file size in bytes.
   const ManifestFile({
     required this.path,
@@ -26,8 +34,9 @@ class ManifestFile {
   /// Parses a [ManifestFile] from a JSON map.
   ///
   /// Throws [FormatException] if:
-  /// - `path` is missing, empty, absolute, or contains `..` / `.` segments.
-  /// - `sha256` is missing or empty.
+  /// - `path` is missing, empty, absolute, contains `..` / `.` segments,
+  ///   backslashes, or empty segments (e.g. `a//b`).
+  /// - `sha256` is not exactly 64 lowercase hex characters.
   /// - `size` is present but not an integer.
   factory ManifestFile.fromJson(Map<String, dynamic> json) {
     final p = json['path'];
@@ -38,14 +47,21 @@ class ManifestFile {
     if (p.startsWith('/')) {
       throw FormatException('manifest file path must be relative: $p');
     }
-    final segments = p.split('/');
-    if (segments.contains('..') || segments.contains('.')) {
+    if (p.contains('\\')) {
       throw FormatException(
-          'manifest file path must not contain ".." or ".": $p');
+          'manifest file path must not contain backslashes: $p');
+    }
+    final segments = p.split('/');
+    if (segments.contains('..') ||
+        segments.contains('.') ||
+        segments.any((s) => s.isEmpty)) {
+      throw FormatException(
+          'manifest file path must not contain "..", ".", or empty segments: $p');
     }
     final s = json['sha256'];
-    if (s is! String || s.isEmpty) {
-      throw FormatException('manifest file "$p": sha256 must be non-empty');
+    if (s is! String || !_sha256Pattern.hasMatch(s)) {
+      throw FormatException(
+          'manifest file "$p": sha256 must be 64 lowercase hex chars (got "$s")');
     }
     final sz = json['size'];
     if (sz != null && sz is! int) {
@@ -76,7 +92,7 @@ class Manifest {
   /// The semantic version string for this manifest snapshot.
   final String version;
 
-  /// Ordered list of files included in this registry snapshot.
+  /// Ordered, unmodifiable list of files included in this registry snapshot.
   final List<ManifestFile> files;
 
   /// Parses a [Manifest] from a JSON map.
@@ -93,9 +109,9 @@ class Manifest {
     if (rawFiles is! List) {
       throw const FormatException('manifest: "files" must be a list');
     }
-    final files = rawFiles
-        .map((e) => ManifestFile.fromJson(e as Map<String, dynamic>))
-        .toList(growable: false);
+    final files = List<ManifestFile>.unmodifiable(
+      rawFiles.map((e) => ManifestFile.fromJson(e as Map<String, dynamic>)),
+    );
     return Manifest(version: v, files: files);
   }
 

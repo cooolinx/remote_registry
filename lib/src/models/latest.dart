@@ -1,5 +1,9 @@
 import 'package:meta/meta.dart';
 
+/// Parsing failures throw [FormatException]; callers at the SDK boundary
+/// (HTTP transport, disk storage) are expected to wrap these into
+/// [RegistryException] subtypes.
+
 /// Points to the current "live" registry version.
 ///
 /// Loaded from `<baseUrl>/latest.json`. The [version] string identifies
