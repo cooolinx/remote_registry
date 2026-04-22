@@ -24,4 +24,7 @@ dev_dependencies:
   mocktail: ^1.0.3
   lints: ^4.0.0
 
+executables:
+  sync_bundle:
+
 flutter:
