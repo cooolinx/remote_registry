@@ -1,0 +1,30 @@
+name: remote_registry
+description: Pull JSON and binary config files from a CDN-backed registry with SHA-256 integrity, local caching, and bundled-asset fallback.
+version: 0.1.0
+homepage: https://github.com/cooolinx/remote_registry
+repository: https://github.com/cooolinx/remote_registry
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+  flutter: ">=3.22.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.0
+  crypto: ^3.0.3
+  path_provider: ^2.1.0
+  path: ^1.9.0
+  meta: ^1.11.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  test: ^1.25.0
+  mocktail: ^1.0.3
+  lints: ^5.0.0
+
+executables:
+  sync_bundle:
+
+flutter:
