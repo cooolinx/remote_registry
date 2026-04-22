@@ -10,6 +10,9 @@ import 'package:path_provider/path_provider.dart';
 
 import 'bundle/asset_bundle_loader.dart';
 import 'errors.dart';
+import 'internal/concurrency.dart';
+import 'internal/semver.dart';
+import 'models/latest.dart';
 import 'models/manifest.dart';
 import 'storage/registry_storage.dart';
 import 'transport/http_transport.dart';
@@ -79,15 +82,12 @@ class RemoteRegistry {
         _testBundle = testBundle,
         _testHttpClient = testHttpClient;
 
-  // ignore: unused_field — used in Task 11 for network URLs
   final Uri _baseUrl;
   final String _subdirectory;
   final Directory? _customStorageDir;
   final String? _bundledAssetPath;
   final Duration _httpTimeout;
-  // ignore: unused_field — used in Task 11
   final int _maxConcurrent;
-  // ignore: unused_field — used in Task 11
   final int _keepVersions;
   final AssetBundle? _testBundle;
   final http.Client? _testHttpClient;
@@ -98,7 +98,6 @@ class RemoteRegistry {
   Stream<String> get onUpdate => _updateController.stream;
 
   late final RegistryStorage _storage;
-  // ignore: unused_field — used in Task 11
   late final HttpTransport _http;
   AssetBundleLoader? _bundle;
 
@@ -125,7 +124,7 @@ class RemoteRegistry {
   /// 1. **Local cache**: existing version on disk.
   /// 2. **Bundle fallback**: seeds disk from the bundled asset snapshot
   ///    (if [bundledAssetPath] was set at construction).
-  /// 3. **Network** (not yet implemented — throws [RegistryUnavailableException]).
+  /// 3. **Network**: fetches and verifies the latest version from the CDN.
   ///
   /// Subsequent calls are no-ops (idempotent).
   ///
@@ -147,21 +146,132 @@ class RemoteRegistry {
 
     if (await _tryLoadLocal()) {
       _initialized = true;
-      // Task 11: schedule background refresh here.
+      if (mode == RegistryInitMode.blockUntilLatest) {
+        await _refreshFromNetwork(blocking: true);
+      } else {
+        unawaited(_refreshFromNetwork(blocking: false));
+      }
       return;
     }
 
     if (_bundle != null && await _seedFromBundle()) {
       _initialized = true;
-      // Task 11: schedule background refresh here.
+      if (mode == RegistryInitMode.blockUntilLatest) {
+        await _refreshFromNetwork(blocking: true);
+      } else {
+        unawaited(_refreshFromNetwork(blocking: false));
+      }
       return;
     }
 
-    // Task 11 will add the network fallback. For now, fail loudly.
-    throw const RegistryUnavailableException(
-      'No local cache and no bundle available, and network fallback '
-      'is not yet implemented.',
-    );
+    // No local cache and no bundle: must succeed online.
+    try {
+      await _refreshFromNetwork(blocking: true);
+    } on RegistryException {
+      rethrow;
+    } catch (e) {
+      throw RegistryUnavailableException('Network fetch failed: $e');
+    }
+    if (_activeVersion == null) {
+      throw const RegistryUnavailableException(
+        'No local cache, no bundle, and network fetch did not produce a version.',
+      );
+    }
+    _initialized = true;
+  }
+
+  /// Fetches the latest version from the network and installs it.
+  ///
+  /// Returns `true` if a new version was installed, `false` if the network
+  /// version is not newer than the current version.
+  ///
+  /// When [blocking] is `true`, errors are rethrown to the caller.
+  /// When [blocking] is `false` (background / stale-then-refresh), errors
+  /// are swallowed silently to preserve the stale cache.
+  Future<bool> _refreshFromNetwork({required bool blocking}) async {
+    try {
+      // 1. Fetch latest.json.
+      LatestPointer latest;
+      try {
+        latest = LatestPointer.fromJson(
+          await _http.fetchJson(_baseUrl.resolve('latest.json')),
+        );
+      } on FormatException catch (e) {
+        throw RegistryNetworkException('Invalid latest.json: ${e.message}', e);
+      }
+
+      // 2. Skip if not newer.
+      if (_activeVersion != null &&
+          compareSemver(latest.version, _activeVersion!) <= 0) {
+        return false;
+      }
+
+      // 3. Fetch manifest.
+      Manifest manifest;
+      try {
+        manifest = Manifest.fromJson(
+          await _http.fetchJson(
+            _baseUrl.resolve('versions/v${latest.version}/manifest.json'),
+          ),
+        );
+      } on FormatException catch (e) {
+        throw RegistryNetworkException('Invalid manifest.json: ${e.message}', e);
+      }
+
+      // 4. Validate manifest/latest version consistency.
+      if (manifest.version != latest.version) {
+        throw RegistryNetworkException(
+          'manifest.version (${manifest.version}) != latest.version (${latest.version})',
+        );
+      }
+
+      // 5. Write manifest to storage.
+      await _storage.writeManifest(manifest.version, manifest);
+
+      // 6. Download files in parallel.
+      await runBounded<void>(
+        maxConcurrent: _maxConcurrent,
+        tasks: [
+          for (final file in manifest.files)
+            () async {
+              final bytes = await _http.fetchBytes(
+                _baseUrl.resolve(
+                  'versions/v${manifest.version}/${file.path}',
+                ),
+              );
+              await _storage.writeVersionFile(
+                version: manifest.version,
+                file: file,
+                bytes: bytes,
+              );
+            },
+        ],
+      );
+
+      // 7. Persist the new current version.
+      await _storage.writeCurrentVersion(manifest.version);
+
+      // 8. Update in-memory state.
+      _activeVersion = manifest.version;
+      _activeManifest = manifest;
+
+      // 9. GC old versions.
+      await _storage.gcOldVersions(
+        keep: _keepVersions,
+        current: manifest.version,
+      );
+
+      // 10. Emit update event.
+      if (!_updateController.isClosed) {
+        _updateController.add(manifest.version);
+      }
+
+      return true;
+    } catch (e) {
+      if (blocking) rethrow;
+      // Background (staleThenRefresh): swallow silently.
+      return false;
+    }
   }
 
   /// Returns a [File] pointing to [relPath] under the current version.

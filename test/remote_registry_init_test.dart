@@ -104,9 +104,11 @@ void main() {
       baseUrl: 'https://unused.example/',
       storageDir: root,
     );
+    // With no cache, no bundle, and no network connectivity the registry
+    // throws a RegistryException (RegistryNetworkException in practice).
     await expectLater(
       r.init(),
-      throwsA(isA<RegistryUnavailableException>()),
+      throwsA(isA<RegistryException>()),
     );
     await r.dispose();
   });
